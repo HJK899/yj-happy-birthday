@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>粉色粒子生日祝福</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #ffc2d1;
+            min-height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+        /* 启动页：文本框改为显示名字（不可输入） */
+        .start-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 100;
+        }
+        .start-box h2 {
+            font-size: 2.5rem;
+            color: #fff;
+            margin-bottom: 1.5rem;
+        }
+        .name-display {
+            padding: 0.8rem 1.2rem;
+            font-size: 1.1rem;
+            width: 280px;
+            border: none;
+            border-radius: 8px;
+            margin-bottom: 1.2rem;
+            outline: none;
+            background: #fff;
+            color: #ff8fab;
+            text-align: center;
+        }
+        .start-box button {
+            padding: 0.8rem 2.5rem;
+            font-size: 1.1rem;
+            background: #fff;
+            color: #ff8fab;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        /* 互动按钮 */
+        .btn-group {
+            position: absolute;
+            bottom: 4rem;
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            gap: 2rem;
+            z-index: 100;
+        }
+        .btn-group button {
+            padding: 0.8rem 2rem;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .like-btn { background: #fff; color: #ff8fab; }
+        .dislike-btn { background: #ff8fab; color: #fff; }
+        /* 画布 */
+        canvas { position: absolute; top: 0; left: 0; }
+        #bgCanvas { z-index: 1; }
+        #mainCanvas { z-index: 10; }
+    </style>
+</head>
+<body>
+    <!-- 启动页：文本框改为显示名字（不可输入） -->
+    <div class="start-box" id="startBox">
+        <h2>生日快乐</h2>
+        <div class="name-display" id="nameDisplay">亲爱的野鸡</div>
+        <button id="enterBtn">进入</button>
+    </div>
+
+    <!-- 画布 -->
+    <canvas id="bgCanvas"></canvas>
+    <canvas id="mainCanvas"></canvas>
+
+    <!-- 互动按钮 -->
+    <div class="btn-group" id="btnGroup">
+        <button class="like-btn" id="likeBtn">喜欢</button>
+        <button class="dislike-btn" id="dislikeBtn">不喜欢</button>
+    </div>
+
+    <script>
+        // 1. 基础初始化
+        const startBox = document.getElementById('startBox');
+        const nameDisplay = document.getElementById('nameDisplay');
+        const enterBtn = document.getElementById('enterBtn');
+        const bgCanvas = document.getElementById('bgCanvas');
+        const bgCtx = bgCanvas.getContext('2d');
+        const mainCanvas = document.getElementById('mainCanvas');
+        const mainCtx = mainCanvas.getContext('2d');
+        const btnGroup = document.getElementById('btnGroup');
+        const likeBtn = document.getElementById('likeBtn');
+        const dislikeBtn = document.getElementById('dislikeBtn');
+
+        // 固定名字（可直接修改此处）
+        const FIXED_NAME = "亲爱的";
+        nameDisplay.innerText = FIXED_NAME;
+
+        // 画布适配
+        function resize() {
+            bgCanvas.width = window.innerWidth;
+            bgCanvas.height = window.innerHeight;
+            mainCanvas.width = window.innerWidth;
+            mainCanvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // 2. 背景：白色方块+粒子
+        class Square {
+            constructor() {
+                this.x = Math.random() * bgCanvas.width;
+                this.y = Math.random() * bgCanvas.height;
+                this.size = Math.random() * 12 + 4;
+                this.dx = (Math.random() - 0.5) * 0.8;
+                this.dy = (Math.random() - 0.5) * 0.8;
+                this.alpha = Math.random() * 0.4 + 0.2;
+            }
+            update() {
+                this.x += this.dx;
+                this.y += this.dy;
+                if (this.x < 0 || this.x > bgCanvas.width - this.size) this.dx *= -1;
+                if (this.y < 0 || this.y > bgCanvas.height - this.size) this.dy *= -1;
+            }
+            draw() {
+                bgCtx.fillStyle = `rgba(255,255,255,${this.alpha})`;
+                bgCtx.fillRect(this.x, this.y, this.size, this.size);
+            }
+        }
+
+        class BgParticle {
+            constructor(x, y) {
+                this.x = x || Math.random() * bgCanvas.width;
+                this.y = y || Math.random() * bgCanvas.height;
+                this.size = Math.random() * 2 + 1;
+                this.dx = (Math.random() - 0.5) * 0.5;
+                this.dy = (Math.random() - 0.5) * 0.5;
+                this.color = `rgba(255,255,255,${Math.random() * 0.3 + 0.2})`;
+            }
+            update() {
+                this.x += this.dx;
+                this.y += this.dy;
+                if (this.x < 0 || this.x > bgCanvas.width) this.dx *= -1;
+                if (this.y < 0 || this.y > bgCanvas.height) this.dy *= -1;
+            }
+            draw() {
+                bgCtx.beginPath();
+                bgCtx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                bgCtx.fillStyle = this.color;
+                bgCtx.fill();
+            }
+        }
+
+        const squares = Array(25).fill().map(() => new Square());
+        const bgParticles = Array(100).fill().map(() => new BgParticle());
+        let squareToParticleTimer = 0;
+
+        // 3. 主内容粒子
+        class MainParticle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.targetX = x;
+                this.targetY = y;
+                this.speed = Math.random() * 3 + 2;
+                this.color = color;
+                this.size = Math.random() * 2 + 1.5;
+                this.alpha = 1;
+                this.isDispersing = false;
+            }
+            update() {
+                if (this.isDispersing) this.alpha -= 0.02;
+                this.x += (this.targetX - this.x) / this.speed;
+                this.y += (this.targetY - this.y) / this.speed;
+            }
+            draw() {
+                const colorWithAlpha = this.color.replace(')', `, ${this.alpha})`).replace('rgb', 'rgba');
+                mainCtx.beginPath();
+                mainCtx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                mainCtx.fillStyle = colorWithAlpha;
+                mainCtx.fill();
+            }
+            disperse(targetAreaX, targetAreaY) {
+                this.isDispersing = true;
+                this.targetX = targetAreaX + (Math.random() - 0.5) * 150;
+                this.targetY = targetAreaY + (Math.random() - 0.5) * 150;
+            }
+        }
+
+        let mainParticles = [];
+        let flameState = 0;
+
+        // 生成文字粒子
+        function createText(text) {
+            mainParticles = [];
+            mainCtx.font = 'bold 8rem Arial';
+            mainCtx.textAlign = 'center';
+            mainCtx.textBaseline = 'middle';
+            const textX = mainCanvas.width / 2;
+            const textY = mainCanvas.height / 2;
+
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            const textW = mainCtx.measureText(text).width;
+            tempCanvas.width = textW + 20;
+            tempCanvas.height = 120;
+            tempCtx.font = 'bold 8rem Arial';
+            tempCtx.textAlign = 'center';
+            tempCtx.textBaseline = 'middle';
+            tempCtx.fillStyle = '#fff';
+            tempCtx.fillText(text, tempCanvas.width / 2, tempCanvas.height / 2);
+
+            const data = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            for (let y = 0; y < tempCanvas.height; y += 5) {
+                for (let x = 0; x < tempCanvas.width; x += 5) {
+                    const idx = (y * tempCanvas.width + x) * 4;
+                    if (data.data[idx + 3] > 128) {
+                        mainParticles.push(new MainParticle(
+                            textX - textW/2 + x,
+                            textY - 60 + y,
+                            '#fff'
+                        ));
+                    }
+                }
+            }
+        }
+
+        // 生成与图片完全一致的蛋糕（深灰+浅灰分层+奶油滴落+单蜡烛）
+        function createCake() {
+            mainParticles = [];
+            const cakeX = mainCanvas.width / 2;
+            const cakeY = mainCanvas.height / 2;
+
+            // 1. 蛋糕主体（完全匹配图片）
+            // 底层（深灰色）
+            for (let y = 0; y < 35; y += 4) {
+                for (let x = 0; x < 100; x += 4) {
+                    mainParticles.push(new MainParticle(cakeX - 50 + x, cakeY + 25 + y, '#5a5a5a'));
+                }
+            }
+            // 中层（浅灰色）
+            for (let y = 0; y < 30; y += 4) {
+                for (let x = 0; x < 90; x += 4) {
+                    mainParticles.push(new MainParticle(cakeX - 45 + x, cakeY - 5 + y, '#8a8a8a'));
+                }
+            }
+            // 顶层（白色奶油）
+            for (let y = 0; y < 20; y += 4) {
+                for (let x = 0; x < 110; x += 4) {
+                    mainParticles.push(new MainParticle(cakeX - 55 + x, cakeY - 35 + y, '#ffffff'));
+                }
+            }
+            // 奶油滴落装饰（与图片一致的位置）
+            const drips = [
+                {x: -48, y: -32}, {x: -22, y: -28}, {x: 0, y: -30}, {x: 22, y: -28}, {x: 48, y: -32}
+            ];
+            drips.forEach(drip => {
+                for (let r = 0; r < 10; r += 3) {
+                    mainParticles.push(new MainParticle(
+                        cakeX + drip.x + r,
+                        cakeY + drip.y + r,
+                        '#ffffff'
+                    ));
+                }
+            });
+
+            // 2. 单根蜡烛（红色+黄色烛芯）
+            // 蜡烛主体
+            for (let y = 0; y < 28; y += 3) {
+                mainParticles.push(new MainParticle(cakeX, cakeY - 65 - y, '#e74c3c'));
+            }
+            // 烛芯
+            mainParticles.push(new MainParticle(cakeX, cakeY - 93, '#f1c40f'));
+
+            // 3. 动态火焰（闪烁效果）
+            updateFlame(cakeX, cakeY);
+
+            // 4. 蛋糕下方的"Happy Birthday"艺术字（与图片一致的手写体）
+            createHappyBirthdayText(cakeX, cakeY + 85);
+        }
+
+        // 生成与图片一致的"Happy Birthday"艺术字
+        function createHappyBirthdayText(x, y) {
+            mainCtx.font = '3.2rem "Brush Script MT", cursive'; // 匹配图片的手写字体
+            mainCtx.textAlign = 'center';
+            mainCtx.textBaseline = 'middle';
+            const text = 'Happy Birthday';
+            const textW = mainCtx.measureText(text).width;
+
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = textW + 20;
+            tempCanvas.height = 60;
+            tempCtx.font = '3.2rem "Brush Script MT", cursive';
+            tempCtx.textAlign = 'center';
+            tempCtx.textBaseline = 'middle';
+            tempCtx.fillStyle = '#444444';
+            tempCtx.fillText(text, tempCanvas.width / 2, tempCanvas.height / 2);
+
+            const data = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            for (let ty = 0; ty < tempCanvas.height; ty += 4) {
+                for (let tx = 0; tx < tempCanvas.width; tx += 4) {
+                    const idx = (ty * tempCanvas.width + tx) * 4;
+                    if (data.data[idx + 3] > 128) {
+                        mainParticles.push(new MainParticle(
+                            x - textW/2 + tx,
+                            y + ty,
+                            '#444444'
+                        ));
+                    }
+                }
+            }
+        }
+
+        // 动态火焰（与图片一致的闪烁效果）
+        function updateFlame(cakeX, cakeY) {
+            flameState += 0.25;
+            const flameSize = 9 + Math.sin(flameState) * 2.5;
+            const flameAlpha = 0.85 + Math.sin(flameState) * 0.12;
+            
+            mainParticles = mainParticles.filter(p => !p.color.includes('251, 191, 36'));
+            for (let r = 0; r < flameSize; r += 2) {
+                for (let a = 0; a < Math.PI * 2; a += 0.45) {
+                    mainParticles.push(new MainParticle(
+                        cakeX + Math.cos(a) * r * 0.55,
+                        cakeY - 90 + Math.sin(a) * r * 0.4,
+                        `rgba(251, 191, 36, ${flameAlpha})`
+                    ));
+                }
+            }
+            setTimeout(() => updateFlame(cakeX, cakeY), 120);
+        }
+
+        // 4. 动画流程控制
+        let animQueue = [];
+        let currentAnim = 0;
+        const TEXT_SHOW_TIME = 1500; 
+        const DISPERSE_DURATION = 300;
+
+        function runNextAnim() {
+            if (currentAnim >= animQueue.length) {
+                btnGroup.style.display = 'flex';
+                return;
+            }
+            const task = animQueue[currentAnim];
+            const centerX = mainCanvas.width / 2;
+            const centerY = mainCanvas.height / 2;
+
+            if (task.type === 'text') {
+                createText(task.content);
+                setTimeout(() => {
+                    mainParticles.forEach(p => p.disperse(centerX, centerY));
+                    setTimeout(() => {
+                        currentAnim++;
+                        runNextAnim();
+                    }, DISPERSE_DURATION);
+                }, TEXT_SHOW_TIME);
+            } else if (task.type === 'cake') {
+                createCake();
+                currentAnim++;
+                runNextAnim();
+            }
+        }
+
+        // 5. 事件绑定
+        enterBtn.addEventListener('click', () => {
+            animQueue = [
+                { type: 'text', content: `Hi，${FIXED_NAME}` },
+                { type: 'text', content: '祝你' },
+                { type: 'text', content: '生日快乐' },
+                { type: 'text', content: 'Happy Birthday' },
+                { type: 'text', content: '3' },
+                { type: 'text', content: '2' },
+                { type: 'text', content: '1' },
+                { type: 'cake' }
+            ];
+            startBox.style.display = 'none';
+            runNextAnim();
+        });
+
+        likeBtn.addEventListener('click', () => alert('喜欢就好哈哈，祝你天天开心！'));
+        dislikeBtn.addEventListener('click', () => alert('看都看完了，不喜欢也要喜欢！'));
+
+        // 6. 主动画循环
+        function animate() {
+            bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+            squares.forEach(s => { s.update(); s.draw(); });
+            bgParticles.forEach(p => { p.update(); p.draw(); });
+
+            squareToParticleTimer++;
+            if (squareToParticleTimer >= 180) {
+                const randomIdx = Math.floor(Math.random() * squares.length);
+                const square = squares[randomIdx];
+                bgParticles.push(new BgParticle(square.x, square.y));
+                squares[randomIdx] = new Square();
+                squareToParticleTimer = 0;
+            }
+
+            mainCtx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+            mainParticles = mainParticles.filter(p => p.alpha > 0);
+            mainParticles.forEach(p => { p.update(); p.draw(); });
+
+            requestAnimationFrame(animate);
+        }
+        animate();
+    </script>
+</body>
+</html>
+
+
+Commit message
